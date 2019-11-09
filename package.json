@@ -1,13 +1,13 @@
 {
     "name": "valory-adaptor-apigw",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "main": "dist/index.js",
     "typings": "dist/index.d.ts",
     "license": "MIT",
     "devDependencies": {
         "@types/node": "^12.11.2",
         "tslint": "^5.20.0",
-        "typescript": "3.7.0-beta",
+        "typescript": "^3.7.2",
         "valory-runtime": "^3.14.1"
     },
     "dependencies": {

@@ -74,18 +74,30 @@ export class APIGWAdaptor implements ApiServer {
     }
 
     private handler(event: APIGatewayProxyEvent, ctx: Context, cb: Callback<APIGatewayProxyResult>) {
+        const path = (event.pathParameters?.proxy != null) ? "/" + event.pathParameters.proxy : event.path;
+
         const formatted: FormattedRequest = {
             requestContext: event.requestContext,
             context: ctx,
             body: event.body || "",
-            headers: event.headers,
+            headers: lowercaseKeys(event.headers),
             method: event.httpMethod,
             isBase64Encoded: event.isBase64Encoded,
             queryStringParameters: event.queryStringParameters || {},
-            url: event.path,
+            url: path,
         };
         this.router.lookup(formatted, cb);
     }
+}
+
+function lowercaseKeys(object: { [key: string]: string }) {
+    const keys = Object.keys(object);
+    const obj: { [key: string]: string } = {};
+    for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        obj[key.toLowerCase()] = object[key];
+    }
+    return obj;
 }
 
 function attemptParse(contentType: string, obj: any): any {
