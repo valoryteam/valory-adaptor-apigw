@@ -1,5 +1,5 @@
 import FMW = require("find-my-way");
-import {ApiRequest, ApiResponse, ApiServer, HttpMethod, ValoryMetadata} from "valory-runtime";
+import {ApiRequest, ApiContext, ApiAdaptor, AttachmentRegistry, HttpMethod} from "valory-runtime";
 import {
     APIGatewayEventRequestContext,
     APIGatewayProxyEvent,
@@ -20,9 +20,9 @@ const default404: APIGatewayProxyResult = {
     body: '{"message": "Not Found"}',
 };
 
-export class APIGWAdaptor implements ApiServer {
-    public static LambdaContextKey = ApiRequest.createKey<Context>();
-    public static APIGWContextKey = ApiRequest.createKey<APIGatewayEventRequestContext>();
+export class APIGWAdaptor implements ApiAdaptor {
+    public static LambdaContextKey = AttachmentRegistry.createKey<Context>();
+    public static APIGWContextKey = AttachmentRegistry.createKey<APIGatewayEventRequestContext>();
     public allowDocSite = true;
     public disableSerialization = false;
     public locallyRunnable = false;
@@ -32,41 +32,38 @@ export class APIGWAdaptor implements ApiServer {
         },
     });
 
-    public register(path: string, method: HttpMethod, handler: (request: ApiRequest) => (Promise<ApiResponse>)) {
-        const route = `${path}:${method}`;
-        this.router.on(HttpMethod[method], path.replace(pathReplacer, ":$1"), (request, callback, params) => {
+    public register(path: string, method: HttpMethod, handler: (ctx: ApiContext) => Promise<ApiContext>): void {
+        this.router.on(method, path.replace(pathReplacer, ":$1"), async (request, callback, params) => {
             const content = (request.isBase64Encoded) ? Buffer.from("base64").toString() : request.body;
             const parsed = attemptParse(request.headers["content-type"], content);
-            const tranRequest = new ApiRequest({
-                headers: request.headers,
-                query: request.queryStringParameters,
-                path: params,
+            const tranRequest = new ApiContext({
                 body: parsed,
+                formData: parsed,
                 rawBody: content,
-                formData: parsed as any,
-                route,
+                path, method,
+                headers: request.headers,
+                queryParams: request.queryStringParameters,
+                pathParams: params,
             });
-            tranRequest.putAttachment(APIGWAdaptor.LambdaContextKey, request.context);
-            tranRequest.putAttachment(APIGWAdaptor.APIGWContextKey, request.requestContext);
+            tranRequest.attachments.putAttachment(APIGWAdaptor.APIGWContextKey, request.requestContext);
+            tranRequest.attachments.putAttachment(APIGWAdaptor.LambdaContextKey, request.context);
 
-            handler(tranRequest).then((response) => {
-                const resContentType = response.headers["Content-Type"] || "text/plain";
-                callback(null, {
-                    isBase64Encoded: false,
-                    body: serialize(resContentType, response.body),
-                    headers: response.headers,
-                    statusCode: response.statusCode,
-                });
+            await handler(tranRequest);
+
+            callback(null, {
+               isBase64Encoded: false,
+               body: tranRequest.serializeResponse(),
+               headers: tranRequest.response.headers,
+               statusCode: tranRequest.response.statusCode,
             });
         });
     }
 
-    public getExport(metadata: ValoryMetadata, options: any): { valory: ValoryMetadata } {
+    public start() {
         // embed the lambda request handler in the export
         return {
-            valory: metadata,
             handler: this.handler.bind(this),
-        } as any;
+        };
     }
 
     public shutdown() {
@@ -75,7 +72,6 @@ export class APIGWAdaptor implements ApiServer {
 
     private handler(event: APIGatewayProxyEvent, ctx: Context, cb: Callback<APIGatewayProxyResult>) {
         const path = (event.pathParameters?.proxy != null) ? "/" + event.pathParameters.proxy : event.path;
-
         const formatted: FormattedRequest = {
             requestContext: event.requestContext,
             context: ctx,

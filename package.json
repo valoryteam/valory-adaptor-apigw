@@ -8,13 +8,13 @@
         "@types/node": "^12.11.2",
         "tslint": "^5.20.0",
         "typescript": "^3.7.2",
-        "valory-runtime": "^3.14.1"
+        "valory-runtime": "^4.0.0-v4.1"
     },
     "dependencies": {
         "find-my-way": "^2.2.1"
     },
     "peerDependencies": {
-        "valory-runtime": "^3.14.1"
+        "valory-runtime": ">=4.0.0"
     },
     "scripts": {
         "build": "tsc"
