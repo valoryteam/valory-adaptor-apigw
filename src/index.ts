@@ -20,9 +20,15 @@ const default404: APIGatewayProxyResult = {
     body: '{"message": "Not Found"}',
 };
 
+function noop<T>(x: T) {
+    return x
+}
+
 export class APIGWAdaptor implements ApiAdaptor {
     public static LambdaContextKey = AttachmentRegistry.createKey<Context>();
     public static APIGWContextKey = AttachmentRegistry.createKey<APIGatewayEventRequestContext>();
+    public static Base64EncodedKey = AttachmentRegistry.createKey<boolean>();
+    public static Base64EncodeResponseKey = AttachmentRegistry.createKey<boolean>();
     public allowDocSite = true;
     public disableSerialization = false;
     public locallyRunnable = false;
@@ -34,26 +40,28 @@ export class APIGWAdaptor implements ApiAdaptor {
 
     public register(path: string, method: HttpMethod, handler: (ctx: ApiContext) => Promise<ApiContext>): void {
         this.router.on(method, path.replace(pathReplacer, ":$1"), async (request, callback, params) => {
-            const content = (request.isBase64Encoded) ? Buffer.from("base64").toString() : request.body;
-            const parsed = attemptParse(request.headers["content-type"], content);
             const tranRequest = new ApiContext({
-                body: parsed,
-                formData: parsed,
-                rawBody: content,
-                path, method,
                 headers: request.headers,
-                queryParams: request.queryStringParameters,
                 pathParams: params,
+                rawBody: request.body,
+                method,
+                path,
+                query: qs.stringify(request.queryStringParameters, undefined, undefined, {encodeURIComponent: noop}),
+                requestId: request.context.awsRequestId
             });
+            tranRequest.attachments.putAttachment(APIGWAdaptor.Base64EncodedKey, request.isBase64Encoded);
             tranRequest.attachments.putAttachment(APIGWAdaptor.APIGWContextKey, request.requestContext);
             tranRequest.attachments.putAttachment(APIGWAdaptor.LambdaContextKey, request.context);
 
             await handler(tranRequest);
 
+            const base64EncodeResponse = tranRequest.attachments.getAttachment(APIGWAdaptor.Base64EncodeResponseKey) || false;
+            const headers = tranRequest.prepareHeaders();
+
             callback(null, {
-               isBase64Encoded: false,
-               body: tranRequest.serializeResponse(),
-               headers: tranRequest.response.headers,
+               isBase64Encoded: base64EncodeResponse,
+               body: (base64EncodeResponse) ? Buffer.from(tranRequest.serializeResponse()).toString("base64") : tranRequest.serializeResponse().toString(),
+               headers,
                statusCode: tranRequest.response.statusCode,
             });
         });
@@ -80,7 +88,7 @@ export class APIGWAdaptor implements ApiAdaptor {
             method: event.httpMethod,
             isBase64Encoded: event.isBase64Encoded,
             queryStringParameters: event.queryStringParameters || {},
-            url: path,
+            url: path.replace(getPrefix(), ""),
         };
         this.router.lookup(formatted, cb);
     }
@@ -123,4 +131,11 @@ function serialize(contentType: string, data: any): string {
     } else {
         return data;
     }
+}
+
+function getPrefix(): string {
+    if (!process.env.PATH_PREFIX) {
+        throw new Error(`PATH_PREFIX undefined.`);
+    }
+    return process.env.PATH_PREFIX;
 }
