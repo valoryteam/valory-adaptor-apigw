@@ -20,10 +20,6 @@ const default404: APIGatewayProxyResult = {
     body: '{"message": "Not Found"}',
 };
 
-function noop<T>(x: T) {
-    return x
-}
-
 export class APIGWAdaptor implements ApiAdaptor {
     public static LambdaContextKey = AttachmentRegistry.createKey<Context>();
     public static APIGWContextKey = AttachmentRegistry.createKey<APIGatewayEventRequestContext>();
@@ -46,7 +42,7 @@ export class APIGWAdaptor implements ApiAdaptor {
                 rawBody: request.body,
                 method,
                 path,
-                query: qs.stringify(request.queryStringParameters, undefined, undefined, {encodeURIComponent: noop}),
+                query: qs.stringify(request.queryStringParameters, undefined, undefined),
                 requestId: request.context.awsRequestId
             });
             tranRequest.attachments.putAttachment(APIGWAdaptor.Base64EncodedKey, request.isBase64Encoded);
@@ -102,35 +98,6 @@ function lowercaseKeys(object: { [key: string]: string }) {
         obj[key.toLowerCase()] = object[key];
     }
     return obj;
-}
-
-function attemptParse(contentType: string, obj: any): any {
-    if (contentType == null) {
-        return obj;
-    }
-    const parsedContentType = contentType.split(";")[0];
-    try {
-        switch (parsedContentType) {
-            case "application/json":
-                return JSON.parse(obj);
-            case "application/x-www-form-urlencoded":
-                return qs.parse(obj);
-            default:
-                return obj;
-        }
-    } catch (err) {
-        return obj;
-    }
-}
-
-function serialize(contentType: string, data: any): string {
-    if (data == null) {
-        return "";
-    } else if (typeof data !== "string") {
-        return JSON.stringify(data);
-    } else {
-        return data;
-    }
 }
 
 function getPrefix(): string {
